@@ -49,6 +49,8 @@ THE SOFTWARE.
 MPU6050 accelgyro;
 //MPU6050 accelgyro(0x69); // <-- use for AD0 high
 #define PI 3.1415926535897932384626433832795
+#define axUpperThreshold 0
+#define axLowerThreshold -3000
 int16_t ax, ay, az;
 int16_t gx, gy, gz;
 float yax, yay, yaz, ygx, ygy, ygz;
@@ -139,12 +141,12 @@ void loop() {
     highpassfilter(gx,gy,gz,n,f_cut);
     comp_filter_pitch(yax,yay,yaz,ygx,ygy,ygz);
     comp_filter_roll(yax,yay,yaz,ygx,ygy,ygz);
-    yaw = yaw + ygz*0.01;
+    //yaw = yaw + ygz*0.01;
     Serial.print("roll= ");Serial.print(abs(roll));Serial.print("\t");
-    Serial.print("pitch= ");Serial.print(abs(pitch));Serial.print("\t");
-    Serial.print("yaw= ");Serial.print(abs(yaw));Serial.print("\t");
-    Serial.print("rms= ");Serial.print(sqrt(sq(pitch)+sq(roll)+sq(yaw)));Serial.print("\t"); 
-    Serial.println();
+    //Serial.print("pitch= ");Serial.print(abs(pitch));Serial.print("\t");
+    //Serial.print("yaw= ");Serial.print(abs(yaw));Serial.print("\t");
+    //Serial.print("rms= ");Serial.print(sqrt(sq(pitch)+sq(roll)+sq(yaw)));Serial.print("\t"); 
+    //Serial.println();
     n++;
     delay(20);
 
@@ -256,12 +258,12 @@ void comp_filter_pitch(float ax,float ay,float az,float gx,float gy,float gz)
 
   if (n==1)
   {
-    pitch = (1-alpha)*((-1)*gx*dt) + alpha*(atan(ay/abs(az))*180/PI);
+    pitch = (1-alpha)*((-1)*gx*dt) + alpha*(atan2(ay,abs(az))*180/PI);
    
   }
   else
   {
-    pitch = (1-alpha)*(pitch_prev - (gx*dt)) + alpha*(atan(ay/abs(az))*180/PI);
+    pitch = (1-alpha)*(pitch_prev - (gx*dt)) + alpha*(atan2(ay,abs(az))*180/PI);
   
   }
   pitch_prev=pitch;
@@ -275,15 +277,32 @@ void comp_filter_roll(float ax,float ay,float az,float gx,float gy,float gz)
 
   if (n==1)
   {
-    roll = (1-alpha)*((-1)*gy*dt) + alpha*(atan(ax/abs(az))*180/PI);
+    roll = (1-alpha)*((-1)*gy*dt) + alpha*(atan2(ax,abs(az))*180/PI);
  
   }
   else
   {
-    roll = (1-alpha)*(roll_prev - (gy*dt)) + alpha*(atan(ax/abs(az))*180/PI);
-
+    roll = (1-alpha)*(roll_prev - (gy*dt)) + alpha*(atan2(ax,abs(az))*180/PI);
   }
   roll_prev=roll;
+  if( (axLowerThreshold<ax) && (ax<axUpperThreshold))
+  {
+    Serial.print("Stable in x direction");Serial.print("\t");
+  }
+  else if(ax>axUpperThreshold)
+  {
+    Serial.print("Falling Backward");Serial.print("\t");
+  }
+  else if(ax<axLowerThreshold)
+  {
+    Serial.print("Falling Forward");Serial.print("\t");
+  }
+  
+  //Serial.print("gx= ");Serial.print(gx);Serial.print("\t");
+  //Serial.print("gy= ");Serial.print(gy);Serial.print("\t");
+  Serial.print("ax= ");Serial.print(ax);Serial.print("\t");
+  //Serial.print("az= ");Serial.print(az);Serial.print("\t");
+  Serial.println();
 
   
 }
