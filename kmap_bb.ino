@@ -8,6 +8,9 @@
 #define rxPin 11
 #define txPin 12
 
+#define axUpperThreshold 0
+#define axLowerThreshold -3000
+
 #include "I2Cdev.h"
 #include "MPU6050.h"
 
@@ -28,6 +31,11 @@ float gxPrevious,gyPrevious,gzPrevious;
 float ygx_prev, ygy_prev , ygz_prev , yax_prev ,yay_prev ,yaz_prev;
 float roll,roll_prev,pitch,pitch_prev,yaw;
 
+float x,x_dot;
+float theta,theta_dot,prev_theta;
+float k1 = 1.0000, k2=0.1129, k3=-37.7177, k4=-1.4959;
+float prev_time; //= millis();
+float radius = 0.05, oneRevTicks = 562.0;
 #define OUTPUT_READABLE_ACCELGYRO
 
 
@@ -87,7 +95,7 @@ volatile boolean run_l = false;
  */
 void setup() {
  Serial.begin(38400);
- /*motor_init();
+ motor_init();
  MAG_init(); 
  LED_init();
  BUZZ_init();
@@ -95,14 +103,14 @@ void setup() {
  pinMode(rxPin, INPUT);
  pinMode(txPin, OUTPUT);
  xbee.begin(19200);
-*/
+
      
 }
 
 /*
  * Input: None
  * Output: None
- * Description: LED Initialization
+ * Description: accelerometer Initialization
  * parameters: None
  */
 void accel_init()
@@ -116,7 +124,6 @@ void accel_init()
     // initialize device
     Serial.println("Initializing I2C devices...");
     accelgyro.initialize();
-    Serial.println("My PC");
 }
 
 void LED_init(){
@@ -397,24 +404,41 @@ void comp_filter_roll(float ax,float ay,float az,float gx,float gy,float gz)
 
 void loop()
 {
-    accelgyro.getMotion6(&ax, &ay, &az, &gx, &gy, &gz);
-    // Serial.print(az/1000);Serial.print("\t");
-    lowpassfilter(ax,ay,az,n,f_cut);
-    highpassfilter(gx,gy,gz,n,f_cut);
-    comp_filter_pitch(yax,yay,yaz,ygx,ygy,ygz);
-    comp_filter_roll(yax,yay,yaz,ygx,ygy,ygz);
-    //yaw = yaw + ygz*0.01;
-    Serial.print("roll= ");Serial.print(abs(roll));Serial.print("\t");
-    Serial.print("pitch= ");Serial.print(abs(pitch));Serial.print("\t");
-    //Serial.print("yaw= ");Serial.print(abs(yaw));Serial.print("\t");
-    //Serial.print("rms= ");Serial.print(sqrt(sq(pitch)+sq(roll)+sq(yaw)));Serial.print("\t"); 
-    Serial.println();
-    //Serial.println(abs(5.002));
-    n++;
+  accelgyro.getMotion6(&ax, &ay, &az, &gx, &gy, &gz);
+  lowpassfilter(ax,ay,az,n,f_cut);
+  highpassfilter(gx,gy,gz,n,f_cut);
+  comp_filter_pitch(yax,yay,yaz,ygx,ygy,ygz);
+  comp_filter_roll(yax,yay,yaz,ygx,ygy,ygz);
+  //yaw = yaw + ygz*0.01;
+  Serial.print("roll= ");Serial.print(abs(roll));Serial.print("\t");
+  Serial.print("pitch= ");Serial.print(abs(pitch));Serial.print("\t");
+  Serial.println();
+  n++;
 
-  
+  if( (axLowerThreshold<ax) && (ax<axUpperThreshold))
+  {
+    Serial.print("Stable in x direction");Serial.print("\t");
+  }
+  else if(ax>axUpperThreshold)
+  {
+    Serial.print("Falling Backward");Serial.print("\t");
+  }
+  else if(ax<axLowerThreshold)
+  {
+    Serial.print("Falling Forward");Serial.print("\t");
+  }
+    
+  theta = abs(roll);
+  theta_dot = (theta-prev_theta)/(millis()-prev_time);
+  if (n%10 == 0)
+  {
+    x_dot = ((count_r-countInit_r)*2*PI)/10/(millis()-prev_time);//linear velocity
+  }
+  x = (count_r*2*PI*radius)/oneRevTicks; //displacement
+  prev_theta = theta;
+  prev_time= millis();
   //Accept only if characters are 18 or more
-  /*if(xbee.available()>=18)                                
+  if(xbee.available()>=18)                                
   {
     //0x7E is the first byte of Xbee frame
     //Accept data starting with 0X7E
@@ -423,8 +447,7 @@ void loop()
       //Ignore the first 11 bytes of data
       for(int i=1 ; i < 11 ; i++)
       {
-        byte discardByte = Serial.read();
-        
+        byte discardByte = Serial.read();    
       }
 
       //Accept the data from the 11th byte to 16th byte
@@ -443,99 +466,99 @@ void loop()
       //Serial.print("\t");
       //Serial.println(analogY);
 
-    int else_flag = 0;
+      int else_flag = 0;
 
-    //Turn On the LED if the digitalMSB value is 0x01
-    if(digitalMSB == 0x01) //led switch
-    {
-      digitalWrite(RED_pin, LOW);
-      digitalWrite(GREEN_pin, HIGH); 
-      digitalWrite(BLUE_pin, HIGH); 
-      digitalWrite(MagF, LOW);
-      digitalWrite(buzz_pin, HIGH);
-      else_flag = 1;
-    }
-
-    //Turn On the Magnet if the digitalLSB value is 0x04
-    if(digitalLSB == 0x04) //magnet switch
-    {
-      digitalWrite(MagF, HIGH);
-      digitalWrite(buzz_pin, HIGH);
-      digitalWrite(RED_pin, HIGH);
-      digitalWrite(GREEN_pin, HIGH);
-      digitalWrite(BLUE_pin, HIGH);
-      else_flag = 1;
-    }
-
-    //Turn On the Buzzer if the digitalLSB value is 0x08
-    else if(digitalLSB == 0x08) //buzzer switch
-    {
-      digitalWrite(buzz_pin, LOW);
-      digitalWrite(MagF, LOW);
-      digitalWrite(RED_pin, HIGH);
-      digitalWrite(GREEN_pin, HIGH);
-      digitalWrite(BLUE_pin, HIGH);
-      else_flag = 1;
-    }
-
-    //Turn On the Magnet and Buzzer if the digitalLSB value is 0x0C
-    else if(digitalLSB == 0x0C) //magnet and buzzer both
-    {
-      digitalWrite(MagF, HIGH);
-      digitalWrite(buzz_pin, LOW);
-      digitalWrite(RED_pin, HIGH);
-      digitalWrite(GREEN_pin, HIGH);
-      digitalWrite(BLUE_pin, HIGH);
-      else_flag = 1;
-    }
-
-    //Turn off everything
-    else if(else_flag == 0)
-    {
-      digitalWrite(RED_pin, HIGH);
-      digitalWrite(GREEN_pin, HIGH);
-      digitalWrite(BLUE_pin, HIGH);    
-      digitalWrite(MagF, LOW);
-      digitalWrite(buzz_pin, HIGH);
-    }
-
-    //No Motion
-    //Serial.print(analogX);Serial.print("\t");Serial.println(analogY);
-    if((analogX > 1023) || (analogY > 1023 ))
-      int a;
-
-    //Both Wheels Forward
-    else if((analogX > 900)  && (400 < analogY) && (analogY <800 ))
-    {
-      Serial.println("Both Wheels Forward");
-      moveMotor(FORWARD,  200, 3*2);
-    }
-
-    //Both Wheels Backward
-    else if((analogX > 900) && (analogY < 300) )
-    {
-      Serial.print("LSB ");
-      Serial.println(digitalLSB);
-      Serial.println(digitalMSB);
-      moveMotor(BACKWARD,  200, 3*2);
-    }
-
-    //Left Wheel Backward, Right Wheel Forward
-    else if((400< analogX)&&(analogX <800 )&& (analogY > 900) )
-    {
-      Serial.println("left wheel Backward, right wheel Forward");
-      moveMotor(RIGHTWARD,  200, 3*2);
-    }
-
-    //Left Wheel Forward, Right Wheel Backward
-    else if((analogX < 300) && (analogY > 900))
-    {
-      Serial.println("left wheel Forward, right wheel Backward");
-      moveMotor(LEFTWARD,  200, 3*2);
-    }  
+      //Turn On the LED if the digitalMSB value is 0x01
+      if(digitalMSB == 0x01) //led switch
+      {
+        digitalWrite(RED_pin, LOW);
+        digitalWrite(GREEN_pin, HIGH); 
+        digitalWrite(BLUE_pin, HIGH); 
+        digitalWrite(MagF, LOW);
+        digitalWrite(buzz_pin, HIGH);
+        else_flag = 1;
+      }
+  
+      //Turn On the Magnet if the digitalLSB value is 0x04
+      if(digitalLSB == 0x04) //magnet switch
+      {
+        digitalWrite(MagF, HIGH);
+        digitalWrite(buzz_pin, HIGH);
+        digitalWrite(RED_pin, HIGH);
+        digitalWrite(GREEN_pin, HIGH);
+        digitalWrite(BLUE_pin, HIGH);
+        else_flag = 1;
+      }
+  
+      //Turn On the Buzzer if the digitalLSB value is 0x08
+      else if(digitalLSB == 0x08) //buzzer switch
+      {
+        digitalWrite(buzz_pin, LOW);
+        digitalWrite(MagF, LOW);
+        digitalWrite(RED_pin, HIGH);
+        digitalWrite(GREEN_pin, HIGH);
+        digitalWrite(BLUE_pin, HIGH);
+        else_flag = 1;
+      }
+  
+      //Turn On the Magnet and Buzzer if the digitalLSB value is 0x0C
+      else if(digitalLSB == 0x0C) //magnet and buzzer both
+      {
+        digitalWrite(MagF, HIGH);
+        digitalWrite(buzz_pin, LOW);
+        digitalWrite(RED_pin, HIGH);
+        digitalWrite(GREEN_pin, HIGH);
+        digitalWrite(BLUE_pin, HIGH);
+        else_flag = 1;
+      }
+  
+      //Turn off everything
+      else if(else_flag == 0)
+      {
+        digitalWrite(RED_pin, HIGH);
+        digitalWrite(GREEN_pin, HIGH);
+        digitalWrite(BLUE_pin, HIGH);    
+        digitalWrite(MagF, LOW);
+        digitalWrite(buzz_pin, HIGH);
+      }
+  
+      //No Motion
+      //Serial.print(analogX);Serial.print("\t");Serial.println(analogY);
+      if((analogX > 1023) || (analogY > 1023 ))
+        int a;
+  
+      //Both Wheels Forward
+      else if((analogX > 900)  && (400 < analogY) && (analogY <800 ))
+      {
+        Serial.println("Both Wheels Forward");
+        moveMotor(FORWARD,  200, 3*2);
+      }
+  
+      //Both Wheels Backward
+      else if((analogX > 900) && (analogY < 300) )
+      {
+        Serial.print("LSB ");
+        Serial.println(digitalLSB);
+        Serial.println(digitalMSB);
+        moveMotor(BACKWARD,  200, 3*2);
+      }
+  
+      //Left Wheel Backward, Right Wheel Forward
+      else if((400< analogX)&&(analogX <800 )&& (analogY > 900) )
+      {
+        Serial.println("left wheel Backward, right wheel Forward");
+        moveMotor(RIGHTWARD,  200, 3*2);
+      }
+  
+      //Left Wheel Forward, Right Wheel Backward
+      else if((analogX < 300) && (analogY > 900))
+      {
+        Serial.println("left wheel Forward, right wheel Backward");
+        moveMotor(LEFTWARD,  200, 3*2);
+      }  
     
    } 
-  }*/
+  }
   
   delay(20); 
 }
