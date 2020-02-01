@@ -1,15 +1,15 @@
 //#include <Arduino.h>
-#include <SoftwareSerial.h>
+//#include <SoftwareSerial.h>
 #ifdef abs
 #undef abs
 #endif
-
+int init_time;
 #define abs(x) ((x)>0?(x):-(x))
-#define rxPin 11
-#define txPin 12
+//#define rxPin 0
+//#define txPin 1
 
-#define axUpperThreshold 0
-#define axLowerThreshold -3000
+#define yaxUpperThreshold  700  
+#define yaxLowerThreshold  700 
 
 #include "I2Cdev.h"
 #include "MPU6050.h"
@@ -22,24 +22,31 @@
 MPU6050 accelgyro;
 
 #define PI 3.1415926535897932384626433832795
-int16_t ax, ay, az;
-int16_t gx, gy, gz;
+int ax, ay, az;
+int gx, gy, gz;
 float yax, yay, yaz, ygx, ygy, ygz;
-int16_t f_cut = 5;
+int f_cut = 5;
 int n = 1;
 float gxPrevious,gyPrevious,gzPrevious;
 float ygx_prev, ygy_prev , ygz_prev , yax_prev ,yay_prev ,yaz_prev;
 float roll,roll_prev,pitch,pitch_prev,yaw;
 
-float x,x_dot;
+float x,x_dot,prev_x;
 float theta,theta_dot,prev_theta;
-float k1 = 1.0000, k2=0.1129, k3=-37.7177, k4=-1.4959;
+//float k1 = -1.0000, k2=-14.0935, k3=120.5796, k4=9.2750; // -1.0000  -32.4753   69.8210    4.8426
+//float k1=0.00000, k2=0,k3 = -50.58372,k4=    -1.42088; //float k1=1.00000, k2=0.58314,k3 = -105.58372,k4=    -7.42088;
+//float k1=1.00000, k2=0.58314, k3 = -105.58372, k4= -7.42088;
+ //1.00000     0.51360  -105.28663    -7.34284
+float k1=-1.00000, k2=5.58,k3 = -15,k4= - 80.42088;
+//float k1 = 31.623,   k2= 36.828, k3= -271.756,k4 =  -33.752;
+//float k1 = 100.00, k2 =   109.09, k3= -1160.62,k4 =   -317.17;
+//float k1 = 31.6228,k2=    12.8456,k3=  -134.2097,k4=    -8.2903;
 float prev_time; //= millis();
-float radius = 0.05, oneRevTicks = 562.0;
+float radius = 0.05, oneRevTicks = 270.0;
 #define OUTPUT_READABLE_ACCELGYRO
 
 
-SoftwareSerial xbee =  SoftwareSerial(rxPin, txPin);
+//SoftwareSerial xbee =  SoftwareSerial(rxPin, txPin);
 
 
 /*Team ID: 336
@@ -47,7 +54,7 @@ SoftwareSerial xbee =  SoftwareSerial(rxPin, txPin);
  * 
  */
  //Macros
-#define MagF            2                     // electromagnet pin
+#define MagF            50                     // electromagnet pin
 #define buzz_pin        31                     // Buzzer pin
 #define RED_pin         43                     //LED Pin
 #define Common_pin      45                     //LED Pin
@@ -94,16 +101,16 @@ volatile boolean run_l = false;
  * BUZZ_init(): Buzzer initialization
  */
 void setup() {
- Serial.begin(38400);
+ Serial.begin(9600);
  motor_init();
  MAG_init(); 
  LED_init();
  BUZZ_init();
  accel_init();
- pinMode(rxPin, INPUT);
- pinMode(txPin, OUTPUT);
- xbee.begin(19200);
-
+ //pinMode(rxPin, INPUT);
+ //pinMode(txPin, OUTPUT);
+ //xbee.begin(19200);
+ init_time = millis();
      
 }
 
@@ -146,7 +153,6 @@ void LED_init(){
  */
 void BUZZ_init(){
     pinMode(buzz_pin, OUTPUT);
-    
     digitalWrite(buzz_pin, HIGH);
 }
 
@@ -175,8 +181,8 @@ void motor_init(void)
  digitalWrite(encodPinL1, HIGH);                      // turn on pullup resistor
  digitalWrite(encodPinL2, HIGH);
  
- attachInterrupt(1, rencoder, FALLING);               // arduino pin 3
- attachInterrupt(4, lencoder, FALLING);               // arduino pin 21
+ attachInterrupt(1, rencoder, RISING);               // arduino pin 3
+ attachInterrupt(4, lencoder, RISING);               // arduino pin 21
 }
 
 void moveMotor(int direction, int PWM_val, long tick)  
@@ -211,48 +217,71 @@ void moveMotor(int direction, int PWM_val, long tick)
 }
 
 void rencoder()  
-{                                    // pulse and direction, direct port reading to save cycles
- if (PINB & 0b00000001)    count_r++;                  // if(digitalRead(encodPinB1)==HIGH)   count_r ++;
- else                      count_r--;                  // if (digitalRead(encodPinB1)==LOW)   count_r --;
+{                                    // pulse and direction, direct port reading to save cycles              
+ if(digitalRead(encodPinR1)==HIGH)   count_r ++;  //motors forward ticks++              
+ else if (digitalRead(encodPinR2)==HIGH)   count_r --; //motors backward ticks--   
  if(run_r) 
    if((abs(abs(count_r)-abs(countInit_r))) >= tickNumber)      motorBrake_R();
 }
 
 void lencoder()  
-{                                    // pulse and direction, direct port reading to save cycles
- if (PINB & 0b00000001)    count_l++;                  // if(digitalRead(encodPinB1)==HIGH)   count_l ++;
- else                      count_l--;                  // if (digitalRead(encodPinB1)==LOW)   count_l --;
+{                                    // pulse and direction, direct port reading to save cycles              
+ if(digitalRead(encodPinL1)==HIGH)   count_l ++;  //motors forward ticks++              
+ else if (digitalRead(encodPinL2)==HIGH)   count_l --; //motors backward ticks--   
  if(run_l) 
    if((abs(abs(count_l)-abs(countInit_l))) >= tickNumber)      motorBrake_L();
 }
 
-void motorForward_R(int PWM_val)  {
- analogWrite(PWMR, PWM_val);
- digitalWrite(InR1, LOW);
- digitalWrite(InR2, HIGH);
- run_r = true;
+
+void motorForward_L(int PWM_val)  
+{
+    analogWrite(PWML, PWM_val);
+    digitalWrite(InL1, LOW);
+    digitalWrite(InL2, HIGH);
 }
 
-void motorForward_L(int PWM_val)  {
- analogWrite(PWML, PWM_val);
- digitalWrite(InL1, LOW);
- digitalWrite(InL2, HIGH);
- run_l = true;
+/*
+ * Input: None
+ * Output: None
+ * Description: Forward Motion of Right Motor
+ * parameters: PWM value
+ */
+void motorForward_R(int PWM_val)  
+{
+    analogWrite(PWMR, PWM_val);
+    digitalWrite(InR1, LOW);
+    digitalWrite(InR2, HIGH);
+  
 }
 
-void motorBackward_R(int PWM_val)  {
- analogWrite(PWMR, PWM_val);
- digitalWrite(InR1, HIGH);
- digitalWrite(InR2, LOW);
- run_r = true;
+
+/*
+ * Input: None
+ * Output: None
+ * Description: Backward Motion of Left Motor
+ * parameters: PWM value
+ */
+void motorBackward_L(int PWM_val)  
+{
+    analogWrite(PWML, PWM_val);
+    digitalWrite(InL1, HIGH);
+    digitalWrite(InL2, LOW);
 }
 
-void motorBackward_L(int PWM_val)  {
- analogWrite(PWML, PWM_val);
- digitalWrite(InL1, HIGH);
- digitalWrite(InL2, LOW);
- run_l = true;
+
+/*
+ * Input: None
+ * Output: None
+ * Description: Backward Motion of Right Motor
+ * parameters: PWM value
+ */
+void motorBackward_R(int PWM_val)  
+{
+    analogWrite(PWMR, PWM_val);
+    digitalWrite(InR1, HIGH);
+    digitalWrite(InR2, LOW);
 }
+
 
 void motorBrake()  {
  analogWrite(PWMR, 0);
@@ -401,49 +430,95 @@ void comp_filter_roll(float ax,float ay,float az,float gx,float gy,float gz)
   }
   roll_prev=roll;  
 }
-
+void motorControl(int torque)
+{
+ //torque between 0-255
+ if (torque >= 0) 
+ { // drive motors forward
+ torque = abs(torque);
+ if(torque<50)
+   torque = 50;
+ motorForward_R(torque); 
+ motorForward_L(torque); 
+}
+ else{ 
+ // drive motors backward
+ torque = abs(torque);
+ if(torque<50)
+   torque = 50;
+ motorBackward_R(torque); 
+ motorBackward_L(torque);
+ }
+}
 void loop()
 {
+
   accelgyro.getMotion6(&ax, &ay, &az, &gx, &gy, &gz);
   lowpassfilter(ax,ay,az,n,f_cut);
   highpassfilter(gx,gy,gz,n,f_cut);
   comp_filter_pitch(yax,yay,yaz,ygx,ygy,ygz);
   comp_filter_roll(yax,yay,yaz,ygx,ygy,ygz);
   //yaw = yaw + ygz*0.01;
-  Serial.print("roll= ");Serial.print(abs(roll));Serial.print("\t");
-  Serial.print("pitch= ");Serial.print(abs(pitch));Serial.print("\t");
-  Serial.println();
+  //Serial.print("roll= ");Serial.print(abs(roll));Serial.print("\t");
+  //Serial.print("pitch= ");Serial.print(abs(pitch));Serial.print("\t");
+  //Serial.println();
   n++;
-
-  if( (axLowerThreshold<ax) && (ax<axUpperThreshold))
+  theta = abs(roll-2);
+  //Serial.print("theta= ");Serial.print(theta);Serial.print("\t");
+  //Serial.println();
+  if(theta <-0.1)
   {
-    Serial.print("Stable in x direction");Serial.print("\t");
+    Serial.println("hi");
+    Serial.println(yax);
   }
-  else if(ax>axUpperThreshold)
-  {
-    Serial.print("Falling Backward");Serial.print("\t");
-  }
-  else if(ax<axLowerThreshold)
-  {
-    Serial.print("Falling Forward");Serial.print("\t");
-  }
-    
-  theta = abs(roll);
+  //Serial.println(yax);  
+  int pid_torque = 10*theta+50*(theta-prev_theta); //50 450 //20-20 good
+  pid_torque = constrain(pid_torque, -220, 220);
+  //Serial.println(theta);
   theta_dot = (theta-prev_theta)/(millis()-prev_time);
+  x = (count_r*2*PI*radius)/oneRevTicks; //displacement
   if (n%10 == 0)
   {
-    x_dot = ((count_r-countInit_r)*2*PI)/10/(millis()-prev_time);//linear velocity
+    x_dot = (x - prev_x)/10/(millis()-prev_time);//linear velocity
+    n=2;
   }
-  x = (count_r*2*PI*radius)/oneRevTicks; //displacement
+  
   prev_theta = theta;
-  prev_time= millis();
+  prev_time = millis();
+  prev_x = x;
+  //Serial.println(-(x*k1+x_dot*k2+theta*k3+theta_dot*k4));
+  //Serial.println(theta);
+  float input1 =  -(x*k1+x_dot*k2+theta*k3+theta_dot*k4)*(255/255);
+  omega = (input1 + prev_input1)*dt 
+  //float torque = constrain(input1, -220, 220);
+  //Serial.println(x);
+  //Serial.print("torque= ");Serial.print(pid_torque);Serial.print("\t");
+  //Serial.println();
+  if( (yaxLowerThreshold<yax) && (yax<yaxUpperThreshold))
+  {
+    //Serial.print("Stable in x direction");Serial.print("\t");
+  }
+  else if(yax>yaxUpperThreshold)
+  {
+    //Serial.print("Falling Backward");Serial.print("\t");
+    motorControl(-torque);
+  }
+  else if(yax<yaxLowerThreshold)
+  {
+    //Serial.print("Falling Forward");Serial.print("\t");
+    motorControl(torque);
+  }
+  
+  //motorControl(torque);
   //Accept only if characters are 18 or more
-  if(xbee.available()>=18)                                
+  
+  if(Serial.available()>=18)                                
   {
     //0x7E is the first byte of Xbee frame
     //Accept data starting with 0X7E
-    if(xbee.read()==0x7E)
+    if(Serial.read()==0x7E)
     {
+      
       //Ignore the first 11 bytes of data
       for(int i=1 ; i < 11 ; i++)
       {
@@ -521,7 +596,7 @@ void loop()
         digitalWrite(MagF, LOW);
         digitalWrite(buzz_pin, HIGH);
       }
-  
+      
       //No Motion
       //Serial.print(analogX);Serial.print("\t");Serial.println(analogY);
       if((analogX > 1023) || (analogY > 1023 ))
@@ -555,10 +630,19 @@ void loop()
       {
         Serial.println("left wheel Forward, right wheel Backward");
         moveMotor(LEFTWARD,  200, 3*2);
-      }  
+      }
+
+    else
+    {
+      motorBrake();
+    }
     
    } 
-  }
+  } 
+
+
+  delay(50); 
+
   
-  delay(20); 
+  
 }
