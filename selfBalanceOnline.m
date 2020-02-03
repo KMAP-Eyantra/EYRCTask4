@@ -14,15 +14,15 @@ pkg load control;
 pkg load signal
 mb = 1.0;               #Robot Mass Kg 
 mw = 45.5/1000;         #Wheel Mass Kg
-h = 0.20       ;         #height m
+h = 0.23       ;         #height m
 w = 0.07        ;        #width m #not distance between wheels
-jb = mb/12*(h*h + w*w) #Moment of Inertia about center Kgm^2
-r = 0.065              ; #Radius m
+jb = (mb*(h*h + w*w))/12 #Moment of Inertia about center Kgm^2
+r = 0.065/2              ; #Radius m
 jw = 0.5*(mw)*r*r     ;#Moment of Inertia of wheels Kgm^2
-l = 0.05              ; ### Distance of wheel to center of mass
-ke = 0.855             ;### EMF Constant Vs/rad
-km = 8.5/100/2.4       ;## Torque Constant Nm/A
-R = 7.2               ;### Motor Resistance ohm
+l = 0.12              ; ### Distance of wheel to center of mass
+ke = 0.36             ;### EMF Constant Vs/rad
+km = 0.4167       ;## Torque Constant Nm/A
+R = 4               ;### Motor Resistance ohm
 g = 9.81               ; #m/s^2     
 b = 0.002               ;### Viscous Friction constant Nms/rad
 
@@ -35,17 +35,22 @@ gam = (-2*(R*b -ke*km)*(2*jw + mb*r*r + 2*mw*r*r + l*mb*r))/(R*r*(2*(jb*jw
 delt = (l*mb*g*(2*jw + mb*r*r + 2*mw*r*r))/(2*jb*jw + 2*jw*l*l*mb +
 jb*mb*r*r +2*jb*mw*r*r + 2*l*l*mb*mw*r*r);
 chi = (km*r)/(R*b - ke*km);
-A = [0 1 0 0;
- 0 alp bet -r*alp;
- 0 0 0 1;
- 0 gam delt -r*alp];
+A = [ 0 1 0 0;
+      0 alp bet -r*alp;
+      0 0 0 1;
+      0 gam delt -r*alp];
+      
 B = [0; alp*chi; 0; gam*chi];
-C = [1 0 0 0;
- 0 1 0 0;
- 0 0 1 0;
- 0 0 0 1];
+
+C = [ 1 0 0 0;
+      0 1 0 0;
+      0 0 1 0;
+      0 0 0 1 ];
+      
 D = [0;0;0;0];
+
 Q=C'*C;
+
 Q =   [1 0 0 0 ; 
        0 0 0 0 ; 
        0 0 1 0 ; 
