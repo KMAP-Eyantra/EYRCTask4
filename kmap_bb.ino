@@ -3,7 +3,8 @@
 #ifdef abs
 #undef abs
 #endif
-int init_time;
+float init_time;
+float dt2=20;
 #define abs(x) ((x)>0?(x):-(x))
 //#define rxPin 0
 //#define txPin 1
@@ -29,22 +30,24 @@ int f_cut = 5;
 int n = 1;
 float gxPrevious,gyPrevious,gzPrevious;
 float ygx_prev, ygy_prev , ygz_prev , yax_prev ,yay_prev ,yaz_prev;
-float roll,roll_prev,pitch,pitch_prev,yaw;
-
+float roll,roll_prev,pitch,pitch_prev,yaw,omega;
+float prev_lqr_torque,lqr_torque,torque;
+float I_b = 0.0048167;
 float x,x_dot,prev_x;
 float theta,theta_dot,prev_theta;
 //float k1 = -1.0000, k2=-14.0935, k3=120.5796, k4=9.2750; // -1.0000  -32.4753   69.8210    4.8426
 //float k1=0.00000, k2=0,k3 = -50.58372,k4=    -1.42088; //float k1=1.00000, k2=0.58314,k3 = -105.58372,k4=    -7.42088;
-//float k1=1.00000, k2=0.58314, k3 = -105.58372, k4= -7.42088;
+//float k1=1.00000, k2=0.94, k3 = -66.60, k4= -5.700;
+//float k1=0.91 ,   k2 = 0.08,k3= -62.5   ,k4=-15.398523; //float k1=0.91 ,   k2 = 0.08,k3= -62.575181   ,k4=-5.398523;
+float k1 = 0.88825,    k2 = 0.12648,  k3 = -62.65876,   k4 = -5.47278;   // for q as identity matrix
  //1.00000     0.51360  -105.28663    -7.34284
-float k1=-1.00000, k2=5.58,k3 = -15,k4= - 80.42088;
+//float k1=-1.00000, k2=5.58,k3 = -15,k4= - 80.42088;
 //float k1 = 31.623,   k2= 36.828, k3= -271.756,k4 =  -33.752;
 //float k1 = 100.00, k2 =   109.09, k3= -1160.62,k4 =   -317.17;
 //float k1 = 31.6228,k2=    12.8456,k3=  -134.2097,k4=    -8.2903;
 float prev_time; //= millis();
 float radius = 0.05, oneRevTicks = 270.0;
 #define OUTPUT_READABLE_ACCELGYRO
-
 
 //SoftwareSerial xbee =  SoftwareSerial(rxPin, txPin);
 
@@ -111,7 +114,6 @@ void setup() {
  //pinMode(txPin, OUTPUT);
  //xbee.begin(19200);
  init_time = millis();
-     
 }
 
 /*
@@ -435,81 +437,88 @@ void motorControl(int torque)
  //torque between 0-255
  if (torque >= 0) 
  { // drive motors forward
+ 
  torque = abs(torque);
- if(torque<50)
-   torque = 50;
  motorForward_R(torque); 
  motorForward_L(torque); 
 }
  else{ 
  // drive motors backward
  torque = abs(torque);
- if(torque<50)
-   torque = 50;
  motorBackward_R(torque); 
  motorBackward_L(torque);
  }
 }
 void loop()
 {
-
+  
+  //MPU
   accelgyro.getMotion6(&ax, &ay, &az, &gx, &gy, &gz);
   lowpassfilter(ax,ay,az,n,f_cut);
   highpassfilter(gx,gy,gz,n,f_cut);
   comp_filter_pitch(yax,yay,yaz,ygx,ygy,ygz);
   comp_filter_roll(yax,yay,yaz,ygx,ygy,ygz);
-  //yaw = yaw + ygz*0.01;
-  //Serial.print("roll= ");Serial.print(abs(roll));Serial.print("\t");
-  //Serial.print("pitch= ");Serial.print(abs(pitch));Serial.print("\t");
-  //Serial.println();
-  n++;
-  theta = abs(roll-2);
-  //Serial.print("theta= ");Serial.print(theta);Serial.print("\t");
-  //Serial.println();
-  if(theta <-0.1)
-  {
-    Serial.println("hi");
-    Serial.println(yax);
-  }
-  //Serial.println(yax);  
-  int pid_torque = 10*theta+50*(theta-prev_theta); //50 450 //20-20 good
-  pid_torque = constrain(pid_torque, -220, 220);
-  //Serial.println(theta);
-  theta_dot = (theta-prev_theta)/(millis()-prev_time);
-  x = (count_r*2*PI*radius)/oneRevTicks; //displacement
-  if (n%10 == 0)
-  {
-    x_dot = (x - prev_x)/10/(millis()-prev_time);//linear velocity
-    n=2;
-  }
+  //MPU ENDS
+
   
+
+
+  
+  //STATE VARIABLES
+  int flag = -1;
+  if((yax-yaxUpperThreshold)>0)
+    flag = 1;
+  theta = flag*abs(roll-2);
+  theta_dot = (theta-prev_theta)/dt2;
+  x = (count_r*2*PI*radius)/270; //displacement
+  x_dot = (x - prev_x)/dt2;//linear velocity
+  //STATE VARIABLES ENDS
+
+  
+
+  //PID
+  int pid_torque = 50*theta+130*(theta-prev_theta);//+ 20*x+0*(x-prev_x); //50 450 //20-20 good
+  //Serial.println(50*theta+10*(theta-prev_theta));
+  pid_torque = constrain(pid_torque, -150, 150);
+  //PID ENDS
+  Serial.print(30*theta);Serial.print("\t");Serial.println(10*theta-prev_theta);
+  lqr_torque =  -((x*k1)+(x_dot*k2)+(theta*k3)+(theta_dot*k4))*(255/255);
+  lqr_torque = constrain(lqr_torque, -200, 200);
+  //Serial.print((-lqr_torque)); Serial.println();
+  
+  //Serial.print(-x*k1);Serial.print("\t");Serial.print(-x_dot*k2);Serial.print("\t");Serial.print(-theta*k3);Serial.print("\t");Serial.println(-theta_dot*k4);
+  //PREVIOUS STATE VARIABLES
   prev_theta = theta;
-  prev_time = millis();
   prev_x = x;
-  //Serial.println(-(x*k1+x_dot*k2+theta*k3+theta_dot*k4));
+  //PREVIOUS STATE VARIABLES ENDS
+  
+  //Serial.print(abs(lqr_torque)); Serial.println();
+  //Serial.println(constrain(pid_torque,-100,100));
+
   //Serial.println(theta);
-  float input1 =  -(x*k1+x_dot*k2+theta*k3+theta_dot*k4)*(255/255);
-  omega = (input1 + prev_input1)*dt 
-  //float torque = constrain(input1, -220, 220);
-  //Serial.println(x);
-  //Serial.print("torque= ");Serial.print(pid_torque);Serial.print("\t");
-  //Serial.println();
+  //Serial.println(theta_dot);
+  
+  //prev_lqr_torque = lqr_torque;
+  
   if( (yaxLowerThreshold<yax) && (yax<yaxUpperThreshold))
   {
     //Serial.print("Stable in x direction");Serial.print("\t");
   }
+  motorControl(-pid_torque);
+  /*
   else if(yax>yaxUpperThreshold)
   {
-    //Serial.print("Falling Backward");Serial.print("\t");
-    motorControl(-torque);
+    //Serial.print("Falling Backward");
+    motorControl(-abs(lqr_torque));
   }
   else if(yax<yaxLowerThreshold)
   {
     //Serial.print("Falling Forward");Serial.print("\t");
-    motorControl(torque);
+    motorControl(abs(lqr_torque));
   }
+  */
+  //Serial.println();
   
-  //motorControl(torque);
   //Accept only if characters are 18 or more
   
   if(Serial.available()>=18)                                
@@ -639,10 +648,14 @@ void loop()
     
    } 
   } 
-
-
-  delay(50); 
-
+  if(n!=1)
+  {
+  dt2 = (millis()-init_time) / 1000;
+  init_time = millis();
+  }
+  //Serial.println(dt2*1000);
+  delay(7); 
+  n++;
   
   
 }
