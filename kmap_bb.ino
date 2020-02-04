@@ -95,7 +95,7 @@ volatile int countInit_l;
 volatile int tickNumber = 0;
 volatile boolean run_r = false;                                     // motor moves
 volatile boolean run_l = false; 
-
+volatile int timerFlag = 0;
 
 /*
  * motor_init(): To initialize motor pins
@@ -114,6 +114,9 @@ void setup() {
  //pinMode(txPin, OUTPUT);
  //xbee.begin(19200);
  init_time = millis();
+ TIMSK2= 0x02;
+ TCCR2B= 0x07;
+ sei();
 }
 
 /*
@@ -451,76 +454,77 @@ void motorControl(int torque)
 }
 void loop()
 {
-  
+  if(timerFlag==1)
   //MPU
-  accelgyro.getMotion6(&ax, &ay, &az, &gx, &gy, &gz);
-  lowpassfilter(ax,ay,az,n,f_cut);
-  highpassfilter(gx,gy,gz,n,f_cut);
-  comp_filter_pitch(yax,yay,yaz,ygx,ygy,ygz);
-  comp_filter_roll(yax,yay,yaz,ygx,ygy,ygz);
-  //MPU ENDS
-
-  
-
-
-  
-  //STATE VARIABLES
-  int flag = -1;
-  if((yax-yaxUpperThreshold)>0)
-    flag = 1;
-  theta = flag*abs(roll-2);
-  theta_dot = (theta-prev_theta)/dt2;
-  x = (count_r*2*PI*radius)/270; //displacement
-  x_dot = (x - prev_x)/dt2;//linear velocity
-  //STATE VARIABLES ENDS
-
-  
-
-  //PID
-  int pid_torque = 50*theta+130*(theta-prev_theta);//+ 20*x+0*(x-prev_x); //50 450 //20-20 good
-  //Serial.println(50*theta+10*(theta-prev_theta));
-  pid_torque = constrain(pid_torque, -150, 150);
-  //PID ENDS
-  Serial.print(30*theta);Serial.print("\t");Serial.println(10*theta-prev_theta);
-  lqr_torque =  -((x*k1)+(x_dot*k2)+(theta*k3)+(theta_dot*k4))*(255/255);
-  lqr_torque = constrain(lqr_torque, -200, 200);
-  //Serial.print((-lqr_torque)); Serial.println();
-  
-  //Serial.print(-x*k1);Serial.print("\t");Serial.print(-x_dot*k2);Serial.print("\t");Serial.print(-theta*k3);Serial.print("\t");Serial.println(-theta_dot*k4);
-  //PREVIOUS STATE VARIABLES
-  prev_theta = theta;
-  prev_x = x;
-  //PREVIOUS STATE VARIABLES ENDS
-  
-  //Serial.print(abs(lqr_torque)); Serial.println();
-  //Serial.println(constrain(pid_torque,-100,100));
-
-  //Serial.println(theta);
-  //Serial.println(theta_dot);
-  
-  //prev_lqr_torque = lqr_torque;
-  
-  if( (yaxLowerThreshold<yax) && (yax<yaxUpperThreshold))
   {
-    //Serial.print("Stable in x direction");Serial.print("\t");
+      accelgyro.getMotion6(&ax, &ay, &az, &gx, &gy, &gz);
+      lowpassfilter(ax,ay,az,n,f_cut);
+      highpassfilter(gx,gy,gz,n,f_cut);
+      comp_filter_pitch(yax,yay,yaz,ygx,ygy,ygz);
+      comp_filter_roll(yax,yay,yaz,ygx,ygy,ygz);
+      //MPU ENDS
+
+
+
+
+
+      //STATE VARIABLES
+      int flag = -1;
+      if((yax-yaxUpperThreshold)>0)
+        flag = 1;
+      theta = flag*abs(roll-2);
+      theta_dot = (theta-prev_theta)/dt2;
+      x = (count_r*2*PI*radius)/270; //displacement
+      x_dot = (x - prev_x)/dt2;//linear velocity
+      //STATE VARIABLES ENDS
+
+
+
+      //PID
+      int pid_torque = 50*theta+130*(theta-prev_theta);//+ 20*x+0*(x-prev_x); //50 450 //20-20 good
+      //Serial.println(50*theta+10*(theta-prev_theta));
+      pid_torque = constrain(pid_torque, -150, 150);
+      //PID ENDS
+      Serial.print(30*theta);Serial.print("\t");Serial.println(10*theta-prev_theta);
+      lqr_torque =  -((x*k1)+(x_dot*k2)+(theta*k3)+(theta_dot*k4))*(255/255);
+      lqr_torque = constrain(lqr_torque, -200, 200);
+      //Serial.print((-lqr_torque)); Serial.println();
+
+      //Serial.print(-x*k1);Serial.print("\t");Serial.print(-x_dot*k2);Serial.print("\t");Serial.print(-theta*k3);Serial.print("\t");Serial.println(-theta_dot*k4);
+      //PREVIOUS STATE VARIABLES
+      prev_theta = theta;
+      prev_x = x;
+      //PREVIOUS STATE VARIABLES ENDS
+
+      //Serial.print(abs(lqr_torque)); Serial.println();
+      //Serial.println(constrain(pid_torque,-100,100));
+
+      //Serial.println(theta);
+      //Serial.println(theta_dot);
+
+      //prev_lqr_torque = lqr_torque;
+
+      if( (yaxLowerThreshold<yax) && (yax<yaxUpperThreshold))
+      {
+        //Serial.print("Stable in x direction");Serial.print("\t");
+      }
+      motorControl(-pid_torque);
+      /*
+      else if(yax>yaxUpperThreshold)
+      {
+        //Serial.print("Falling Backward");
+        motorControl(-abs(lqr_torque));
+      }
+      else if(yax<yaxLowerThreshold)
+      {
+        //Serial.print("Falling Forward");Serial.print("\t");
+        motorControl(abs(lqr_torque));
+      }
+      */
+      //Serial.println();
+      timerFlag = 0;
+      //Accept only if characters are 18 or more
   }
-  motorControl(-pid_torque);
-  /*
-  else if(yax>yaxUpperThreshold)
-  {
-    //Serial.print("Falling Backward");
-    motorControl(-abs(lqr_torque));
-  }
-  else if(yax<yaxLowerThreshold)
-  {
-    //Serial.print("Falling Forward");Serial.print("\t");
-    motorControl(abs(lqr_torque));
-  }
-  */
-  //Serial.println();
-  
-  //Accept only if characters are 18 or more
-  
   if(Serial.available()>=18)                                
   {
     //0x7E is the first byte of Xbee frame
@@ -658,4 +662,8 @@ void loop()
   n++;
   
   
+}
+ISR(TIMER2_COMPA_vect)
+{
+    timerFlag = 1;
 }
