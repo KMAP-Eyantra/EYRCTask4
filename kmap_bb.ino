@@ -39,7 +39,8 @@ float theta,theta_dot,prev_theta;
 //float k1=0.00000, k2=0,k3 = -50.58372,k4=    -1.42088; //float k1=1.00000, k2=0.58314,k3 = -105.58372,k4=    -7.42088;
 //float k1=1.00000, k2=0.94, k3 = -66.60, k4= -5.700;
 //float k1=0.91 ,   k2 = 0.08,k3= -62.5   ,k4=-15.398523; //float k1=0.91 ,   k2 = 0.08,k3= -62.575181   ,k4=-5.398523;
-float k1 = 0.88825,    k2 = 0.12648,  k3 = -62.65876,   k4 = -5.47278;   // for q as identity matrix
+//float k1 = 0.88825,    k2 = 0.12648,  k3 = -62.65876,   k4 = -5.47278;   // for q as identity matrix
+float k1 = 0.285,k2=  -3.5,k3=  -15.21951,k4=   -0.75698;
  //1.00000     0.51360  -105.28663    -7.34284
 //float k1=-1.00000, k2=5.58,k3 = -15,k4= - 80.42088;
 //float k1 = 31.623,   k2= 36.828, k3= -271.756,k4 =  -33.752;
@@ -95,7 +96,7 @@ volatile int countInit_l;
 volatile int tickNumber = 0;
 volatile boolean run_r = false;                                     // motor moves
 volatile boolean run_l = false; 
-volatile int timerFlag = 0;
+
 
 /*
  * motor_init(): To initialize motor pins
@@ -114,9 +115,6 @@ void setup() {
  //pinMode(txPin, OUTPUT);
  //xbee.begin(19200);
  init_time = millis();
- TIMSK2= 0x02;
- TCCR2B= 0x07;
- sei();
 }
 
 /*
@@ -422,16 +420,16 @@ void comp_filter_pitch(float ax,float ay,float az,float gx,float gy,float gz)
 
 void comp_filter_roll(float ax,float ay,float az,float gx,float gy,float gz)
 {
-  float alpha = 0.03;
+  float alpha = 0.04;
   float dt = 0.01;
 
   if (n==1)
   {
-    roll = (1-alpha)*((-1)*gy*dt) + alpha*(atan(ax/abs(az))*180/PI);
+    roll = (1-alpha)*((-1)*gy*dt) + alpha*(atan2(ax,abs(az))*180/PI);
   }
   else
   {
-    roll = (1-alpha)*(roll_prev - (gy*dt)) + alpha*(atan(ax/abs(az))*180/PI);
+    roll = (1-alpha)*(roll_prev - (gy*dt)) + alpha*(atan2(ax,abs(az))*180/PI);
   }
   roll_prev=roll;  
 }
@@ -440,13 +438,14 @@ void motorControl(int torque)
  //torque between 0-255
  if (torque >= 0) 
  { // drive motors forward
- 
+
  torque = abs(torque);
  motorForward_R(torque); 
  motorForward_L(torque); 
 }
  else{ 
  // drive motors backward
+
  torque = abs(torque);
  motorBackward_R(torque); 
  motorBackward_L(torque);
@@ -454,77 +453,82 @@ void motorControl(int torque)
 }
 void loop()
 {
-  if(timerFlag==1)
+  
   //MPU
+  accelgyro.getMotion6(&ax, &ay, &az, &gx, &gy, &gz);
+  lowpassfilter(ax,ay,az,n,f_cut);
+  highpassfilter(gx,gy,gz,n,f_cut);
+  comp_filter_pitch(yax,yay,yaz,ygx,ygy,ygz);
+  comp_filter_roll(yax,yay,yaz,ygx,ygy,ygz);
+  //MPU ENDS
+
+  
+
+
+  
+  //STATE VARIABLES
+  int flag = -1;
+  
+  theta = (roll-2);
+  //theta_dot = (theta-prev_theta)/dt2;
+  if(theta>0)
+    flag = 1;
+  theta_dot = (theta-prev_theta);
+  x = (count_r*2*PI*radius)/270; //displacement
+  //x_dot = (x - prev_x)/dt2;//linear velocity
+  x_dot = (x - prev_x);
+  //STATE VARIABLES ENDS
+  //Serial.println(theta);
+  
+  
+  //PID
+  int pid_torque = 50*theta+118*(theta-prev_theta);//+ 20*x+0*(x-prev_x); //50 450 //20-20 good
+  //Serial.println(50*theta+10*(theta-prev_theta));
+  pid_torque = constrain(pid_torque, -150, 150);
+  //PID ENDS
+  //Serial.print(30*theta);Serial.print("\t");Serial.println(10*theta-prev_theta);
+  lqr_torque =  -((-x*k1)+(-x_dot*k2)+(theta*k3)+(theta_dot*k4))*(255.0/100.0); //45
+  
+  lqr_torque = constrain(lqr_torque, -200, 200); //
+  //Serial.print(x);Serial.print("\t");Serial.println(theta);
+  
+  Serial.print(100*x*k1);Serial.print("\t");Serial.print(-x_dot*k2);Serial.print("\t");Serial.print(-theta*k3);Serial.print("\t");Serial.println(-theta_dot*k4);
+  //PREVIOUS STATE VARIABLES
+  prev_theta = theta;
+  prev_x = x;
+  //PREVIOUS STATE VARIABLES ENDS
+  
+  //Serial.print(abs(lqr_torque)); Serial.println();
+  //Serial.println(constrain(pid_torque,-100,100));
+
+  //Serial.println(theta);
+  //Serial.println(theta_dot);
+  
+  //prev_lqr_torque = lqr_torque;
+  //Serial.println(lqr_torque);
+  
+  if( (yaxLowerThreshold<yax) && (yax<yaxUpperThreshold))
   {
-      accelgyro.getMotion6(&ax, &ay, &az, &gx, &gy, &gz);
-      lowpassfilter(ax,ay,az,n,f_cut);
-      highpassfilter(gx,gy,gz,n,f_cut);
-      comp_filter_pitch(yax,yay,yaz,ygx,ygy,ygz);
-      comp_filter_roll(yax,yay,yaz,ygx,ygy,ygz);
-      //MPU ENDS
-
-
-
-
-
-      //STATE VARIABLES
-      int flag = -1;
-      if((yax-yaxUpperThreshold)>0)
-        flag = 1;
-      theta = flag*abs(roll-2);
-      theta_dot = (theta-prev_theta)/dt2;
-      x = (count_r*2*PI*radius)/270; //displacement
-      x_dot = (x - prev_x)/dt2;//linear velocity
-      //STATE VARIABLES ENDS
-
-
-
-      //PID
-      int pid_torque = 50*theta+130*(theta-prev_theta);//+ 20*x+0*(x-prev_x); //50 450 //20-20 good
-      //Serial.println(50*theta+10*(theta-prev_theta));
-      pid_torque = constrain(pid_torque, -150, 150);
-      //PID ENDS
-      Serial.print(30*theta);Serial.print("\t");Serial.println(10*theta-prev_theta);
-      lqr_torque =  -((x*k1)+(x_dot*k2)+(theta*k3)+(theta_dot*k4))*(255/255);
-      lqr_torque = constrain(lqr_torque, -200, 200);
-      //Serial.print((-lqr_torque)); Serial.println();
-
-      //Serial.print(-x*k1);Serial.print("\t");Serial.print(-x_dot*k2);Serial.print("\t");Serial.print(-theta*k3);Serial.print("\t");Serial.println(-theta_dot*k4);
-      //PREVIOUS STATE VARIABLES
-      prev_theta = theta;
-      prev_x = x;
-      //PREVIOUS STATE VARIABLES ENDS
-
-      //Serial.print(abs(lqr_torque)); Serial.println();
-      //Serial.println(constrain(pid_torque,-100,100));
-
-      //Serial.println(theta);
-      //Serial.println(theta_dot);
-
-      //prev_lqr_torque = lqr_torque;
-
-      if( (yaxLowerThreshold<yax) && (yax<yaxUpperThreshold))
-      {
-        //Serial.print("Stable in x direction");Serial.print("\t");
-      }
-      motorControl(-pid_torque);
-      /*
-      else if(yax>yaxUpperThreshold)
-      {
-        //Serial.print("Falling Backward");
-        motorControl(-abs(lqr_torque));
-      }
-      else if(yax<yaxLowerThreshold)
-      {
-        //Serial.print("Falling Forward");Serial.print("\t");
-        motorControl(abs(lqr_torque));
-      }
-      */
-      //Serial.println();
-      timerFlag = 0;
-      //Accept only if characters are 18 or more
+    //Serial.print("Stable in x direction");Serial.print("\t");
   }
+  if(theta>0.05 || theta<-0.05)
+    motorControl(-lqr_torque);
+  /*
+  else if(yax>yaxUpperThreshold)
+  {
+    //Serial.print("Falling Backward");
+    motorControl(-abs(lqr_torque));
+  }
+  else if(yax<yaxLowerThreshold)
+  {
+    //Serial.print("Falling Forward");Serial.print("\t");
+    motorControl(abs(lqr_torque));
+  }
+  */
+  //Serial.println();
+  
+  //Accept only if characters are 18 or more
+  
   if(Serial.available()>=18)                                
   {
     //0x7E is the first byte of Xbee frame
@@ -662,8 +666,4 @@ void loop()
   n++;
   
   
-}
-ISR(TIMER2_COMPA_vect)
-{
-    timerFlag = 1;
 }
