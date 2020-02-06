@@ -23,6 +23,7 @@ float dt2=20;
 MPU6050 accelgyro;
 
 #define PI 3.1415926535897932384626433832795
+volatile int timer_flag=0;
 int ax, ay, az;
 int gx, gy, gz;
 float yax, yay, yaz, ygx, ygy, ygz;
@@ -114,6 +115,8 @@ void setup() {
  //pinMode(rxPin, INPUT);
  //pinMode(txPin, OUTPUT);
  //xbee.begin(19200);
+ timer1_init();	   
+ start_timer1();	
  init_time = millis();
 }
 
@@ -123,6 +126,37 @@ void setup() {
  * Description: accelerometer Initialization
  * parameters: None
  */
+
+void timer1_init()
+{
+	TCCR1B = 0x00; 		// Stop Timer
+	TCNT1  = 0xFF70;	// 0.01s
+	OCR1A  = 0x0000; 	// Output Compare Register (OCR) - Not used
+	OCR1B  = 0x0000; 	// Output Compare Register (OCR) - Not used
+	OCR1C  = 0x0000; 	// Output Compare Register (OCR) - Not used
+	ICR1   = 0x0000; 	// Input Capture Register (ICR)  - Not used
+	TCCR1A = 0x00;
+	TCCR1C = 0x00;
+}
+
+void start_timer1()
+{
+	TCCR1B = 0x05; 		// Prescaler 1024 1-0-1
+	TIMSK1 = 0x01;		// Enable Timer Overflow Interrupt
+}
+
+
+
+ISR(TIMER1_OVF_vect)
+{
+	TIMSK1 = 0x00;	
+	//read_tilt_angle();	
+    accelgyro.getMotion6(&ax, &ay, &az, &gx, &gy, &gz);
+    timer_flag = 1;
+	TCNT1 = 0xFF70;
+	TIMSK1 = 0x01;
+}
+
 void accel_init()
 {
     #if I2CDEV_IMPLEMENTATION == I2CDEV_ARDUINO_WIRE
@@ -453,9 +487,9 @@ void motorControl(int torque)
 }
 void loop()
 {
-  
-  //MPU
-  accelgyro.getMotion6(&ax, &ay, &az, &gx, &gy, &gz);
+  if(timer_flag == 1)
+  {  //MPU
+  //accelgyro.getMotion6(&ax, &ay, &az, &gx, &gy, &gz);
   lowpassfilter(ax,ay,az,n,f_cut);
   highpassfilter(gx,gy,gz,n,f_cut);
   comp_filter_pitch(yax,yay,yaz,ygx,ygy,ygz);
@@ -664,6 +698,6 @@ void loop()
   //Serial.println(dt2*1000);
   delay(7); 
   n++;
-  
-  
+  timer_flag =0;
+  }
 }
