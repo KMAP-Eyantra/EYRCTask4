@@ -40,7 +40,7 @@ float theta,theta_dot,prev_theta;
 //float k1=1.00000, k2=0.94, k3 = -66.60, k4= -5.700;
 //float k1=0.91 ,   k2 = 0.08,k3= -62.5   ,k4=-15.398523; //float k1=0.91 ,   k2 = 0.08,k3= -62.575181   ,k4=-5.398523;
 //float k1 = 0.88825,    k2 = 0.12648,  k3 = -62.65876,   k4 = -5.47278;   // for q as identity matrix
-float k1 = 0.285,k2=  -3.5,k3=  -15.21951,k4=   -0.75698;
+float k1 = 1,k2=  -1.5,k3=  -25.21951,k4=   -0.75698;
  //1.00000     0.51360  -105.28663    -7.34284
 //float k1=-1.00000, k2=5.58,k3 = -15,k4= - 80.42088;
 //float k1 = 31.623,   k2= 36.828, k3= -271.756,k4 =  -33.752;
@@ -492,7 +492,7 @@ void loop()
   lqr_torque = constrain(lqr_torque, -200, 200); //
   //Serial.print(x);Serial.print("\t");Serial.println(theta);
   
-  Serial.print(100*x*k1);Serial.print("\t");Serial.print(-x_dot*k2);Serial.print("\t");Serial.print(-theta*k3);Serial.print("\t");Serial.println(-theta_dot*k4);
+  Serial.print(100*x*k1);Serial.print("\t");Serial.print(-x_dot*k2);Serial.print("\t");Serial.print(-4*theta*k3);Serial.print("\t");Serial.println(-theta_dot*k4);
   //PREVIOUS STATE VARIABLES
   prev_theta = theta;
   prev_x = x;
@@ -511,8 +511,8 @@ void loop()
   {
     //Serial.print("Stable in x direction");Serial.print("\t");
   }
-  if(theta>0.05 || theta<-0.05)
-    motorControl(-lqr_torque);
+  
+  motorControl(-lqr_torque);
   /*
   else if(yax>yaxUpperThreshold)
   {
