@@ -9,8 +9,6 @@ float dt2=20;
 //#define rxPin 0
 //#define txPin 1
 
-#define yaxUpperThreshold  700  
-#define yaxLowerThreshold  700 
 
 #include "I2Cdev.h"
 #include "MPU6050.h"
@@ -23,7 +21,6 @@ float dt2=20;
 MPU6050 accelgyro;
 
 #define PI 3.1415926535897932384626433832795
-volatile int timer_flag=0;
 int ax, ay, az;
 int gx, gy, gz;
 float yax, yay, yaz, ygx, ygy, ygz;
@@ -41,7 +38,8 @@ float theta,theta_dot,prev_theta;
 //float k1=1.00000, k2=0.94, k3 = -66.60, k4= -5.700;
 //float k1=0.91 ,   k2 = 0.08,k3= -62.5   ,k4=-15.398523; //float k1=0.91 ,   k2 = 0.08,k3= -62.575181   ,k4=-5.398523;
 //float k1 = 0.88825,    k2 = 0.12648,  k3 = -62.65876,   k4 = -5.47278;   // for q as identity matrix
-float k1 = 1,k2=  -1.5,k3=  -25.21951,k4=   -0.75698;
+//float k1 = 1,k2=  -1.5,k3=  -25.21951,k4=   -0.75698;
+float k1=400.2370,  k2= -8.6292,k3=  -2000.5476,k4=   -50.7686;
  //1.00000     0.51360  -105.28663    -7.34284
 //float k1=-1.00000, k2=5.58,k3 = -15,k4= - 80.42088;
 //float k1 = 31.623,   k2= 36.828, k3= -271.756,k4 =  -33.752;
@@ -115,8 +113,6 @@ void setup() {
  //pinMode(rxPin, INPUT);
  //pinMode(txPin, OUTPUT);
  //xbee.begin(19200);
- timer1_init();	   
- start_timer1();	
  init_time = millis();
 }
 
@@ -126,37 +122,6 @@ void setup() {
  * Description: accelerometer Initialization
  * parameters: None
  */
-
-void timer1_init()
-{
-	TCCR1B = 0x00; 		// Stop Timer
-	TCNT1  = 0xFF70;	// 0.01s
-	OCR1A  = 0x0000; 	// Output Compare Register (OCR) - Not used
-	OCR1B  = 0x0000; 	// Output Compare Register (OCR) - Not used
-	OCR1C  = 0x0000; 	// Output Compare Register (OCR) - Not used
-	ICR1   = 0x0000; 	// Input Capture Register (ICR)  - Not used
-	TCCR1A = 0x00;
-	TCCR1C = 0x00;
-}
-
-void start_timer1()
-{
-	TCCR1B = 0x05; 		// Prescaler 1024 1-0-1
-	TIMSK1 = 0x01;		// Enable Timer Overflow Interrupt
-}
-
-
-
-ISR(TIMER1_OVF_vect)
-{
-	TIMSK1 = 0x00;	
-	//read_tilt_angle();	
-    accelgyro.getMotion6(&ax, &ay, &az, &gx, &gy, &gz);
-    timer_flag = 1;
-	TCNT1 = 0xFF70;
-	TIMSK1 = 0x01;
-}
-
 void accel_init()
 {
     #if I2CDEV_IMPLEMENTATION == I2CDEV_ARDUINO_WIRE
@@ -487,9 +452,9 @@ void motorControl(int torque)
 }
 void loop()
 {
-  if(timer_flag == 1)
-  {  //MPU
-  //accelgyro.getMotion6(&ax, &ay, &az, &gx, &gy, &gz);
+  
+  //MPU
+  accelgyro.getMotion6(&ax, &ay, &az, &gx, &gy, &gz);
   lowpassfilter(ax,ay,az,n,f_cut);
   highpassfilter(gx,gy,gz,n,f_cut);
   comp_filter_pitch(yax,yay,yaz,ygx,ygy,ygz);
@@ -501,12 +466,9 @@ void loop()
 
   
   //STATE VARIABLES
-  int flag = -1;
   
   theta = (roll-2);
   //theta_dot = (theta-prev_theta)/dt2;
-  if(theta>0)
-    flag = 1;
   theta_dot = (theta-prev_theta);
   x = (count_r*2*PI*radius)/270; //displacement
   //x_dot = (x - prev_x)/dt2;//linear velocity
@@ -521,12 +483,12 @@ void loop()
   pid_torque = constrain(pid_torque, -150, 150);
   //PID ENDS
   //Serial.print(30*theta);Serial.print("\t");Serial.println(10*theta-prev_theta);
-  lqr_torque =  -((-x*k1)+(-x_dot*k2)+(theta*k3)+(theta_dot*k4))*(255.0/100.0); //45
+  lqr_torque =  -((-x*k1)+(-x_dot*k2)+(theta*k3/57.0)+(theta_dot*k4/57.0)); //45
   
   lqr_torque = constrain(lqr_torque, -200, 200); //
   //Serial.print(x);Serial.print("\t");Serial.println(theta);
   
-  Serial.print(100*x*k1);Serial.print("\t");Serial.print(-x_dot*k2);Serial.print("\t");Serial.print(-4*theta*k3);Serial.print("\t");Serial.println(-theta_dot*k4);
+  //Serial.print(x*k1);Serial.print("\t");Serial.print(x_dot*k2);Serial.print("\t");Serial.print(-theta*k3/57.0);Serial.print("\t");Serial.println(-theta_dot*k4/57.0);
   //PREVIOUS STATE VARIABLES
   prev_theta = theta;
   prev_x = x;
@@ -541,10 +503,6 @@ void loop()
   //prev_lqr_torque = lqr_torque;
   //Serial.println(lqr_torque);
   
-  if( (yaxLowerThreshold<yax) && (yax<yaxUpperThreshold))
-  {
-    //Serial.print("Stable in x direction");Serial.print("\t");
-  }
   
   motorControl(-lqr_torque);
   /*
@@ -698,6 +656,6 @@ void loop()
   //Serial.println(dt2*1000);
   delay(7); 
   n++;
-  timer_flag =0;
-  }
+  
+  
 }
