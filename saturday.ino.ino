@@ -4,7 +4,7 @@
 #include <avr/io.h>
 #include <avr/interrupt.h>
 #include "I2Cdev.h"
-#include "MPU6050.h"
+//#include "MPU6050.h"
 #if I2CDEV_IMPLEMENTATION == I2CDEV_ARDUINO_WIRE
     #include "Wire.h"
 #endif
@@ -14,8 +14,8 @@
 
 #define abs(x) ((x)>0?(x):-(x))
 #define PI 3.1415926535897932384626433832795
-
-MPU6050 accelgyro;
+const int MPU = 0x68; // MPU6050 I2C address
+//MPU6050 accelgyro;
 
 volatile int tot_overflow;
 volatile int timer1Flag = 0;
@@ -25,8 +25,8 @@ float init_time;
 float dt2=20;
 //#define rxPin 0
 //#define txPin 1
-int ax, ay, az;
-int gx, gy, gz;
+float ax, ay, az;
+float gx, gy, gz;
 float yax, yay, yaz, ygx, ygy, ygz;
 int f_cut = 5;
 int n = 1;
@@ -56,7 +56,7 @@ float theta,theta_dot,prev_theta;
 //float k1 =0.27322,k2 =0.1746,k3 =-4.2593,k4 =-0.00151;
 //float k1 =0.27322,k2 =1.1746,k3 =-4.2593,k4 =-0.40151;
 //float k1 =0.26943,k2 =1.2607,k3 =-5.3147,k4 =-0.43766;
-float k1 =1,k2 =0.1129,k3 =-87,k4 =-1.5;
+float k1 =1,k2 =0.1129,k3 =-27,k4 =-1.5;
 //float k1 =0.31623,k2 =0.079211,k3 =-5.8701,k4 =-0.48543;
 //float k1 =1,k2 =0.57943,k3 =-6.8103,k4 =-1.0958;
 float prev_time; //= millis();
@@ -125,6 +125,7 @@ void setup() {
  BUZZ_init();
  accel_init();
  timer1_init();
+ 
  //pinMode(rxPin, INPUT);
  //pinMode(txPin, OUTPUT);
  //xbee.begin(19200);
@@ -154,15 +155,33 @@ void timer1_init()
 void accel_init()
 {
     //#if I2CDEV_IMPLEMENTATION == I2CDEV_ARDUINO_WIRE
-    Wire.begin();
+    //Wire.begin();
     //#elif I2CDEV_IMPLEMENTATION == I2CDEV_BUILTIN_FASTWIRE
     //    Fastwire::setup(400, true);
     //#endif
-    Wire.setClock(400000UL); 
-    delay(100);
+   // Wire.beginTransmission(MPU);       // Start communication with MPU6050 // MPU=0x68
+  //  Wire.write(0x6B);                  // Talk to the register 6B
+   // Wire.write(0x00);                  // Make reset - place a 0 into the 6B register
+    //Wire.write(0x1F);                  //register for gy;
+    //Wire.write(0x05); 
+   // Wire.endTransmission(true);        //end the transmission
+
+   // Wire.setClock(400000UL); 
+   // delay(100);
+  
+    
     // initialize device
     //Serial.println("Initializing I2C devices...");
-    accelgyro.initialize();
+    //accelgyro.initialize();
+
+    Wire.begin();                      // Initialize comunication
+  Wire.beginTransmission(MPU);       // Start communication with MPU6050 // MPU=0x68
+  Wire.write(0x6B);                  // Talk to the register 6B
+  Wire.write(0x00);                  // Make reset - place a 0 into the 6B register
+  //Wire.write(0x1F);                  //register for gy;
+  //Wire.write(0x05); 
+  Wire.endTransmission(true);        //end the transmission
+    
 }
 
 void LED_init(){
@@ -507,10 +526,11 @@ void  readTiltAngle()
 {
     
   //MPU
-  accelgyro.getMotion6(&ax, &ay, &az, &gx, &gy, &gz);
+  //accelgyro.getMotion6(&ax, &ay, &az, &gx, &gy, &gz);
+  accelGyro();
   //Serial.println(accelgyro.getRate());
   lowpassfilter(ax,ay,az,n,f_cut);
-  highpassfilter(gx/2.28,gy/2.28,gz/2.28,n,f_cut);
+  highpassfilter(gx,gy,gz,n,f_cut);
   comp_filter_pitch(yax,yay,yaz,ygx,ygy,ygz);
   comp_filter_roll(yax,yay,yaz,ygx,ygy,ygz);
   //MPU ENDS
@@ -541,7 +561,7 @@ void lqrControl()
   //PID ENDS
 
   //Serial.print(30*theta);Serial.print("\t");Serial.println(10*theta-prev_theta);
-  lqr_torque =  ((x*k1)+(x_dot*k2)+(theta*k3/57.0)+(theta_dot*k4/57.0))*30*(200/7);
+  lqr_torque =  ((x*k1)+(x_dot*k2)+(theta*k3/57.0)+(theta_dot*k4/57.0))*30*(150/7);
 
   lqr_torque = constrain(lqr_torque, -125, 125); //
   //Serial.print(x);Serial.print("\t");Serial.println(theta);
@@ -560,7 +580,7 @@ void lqrControl()
   
   //prev_lqr_torque = lqr_torque;
   //Serial.println(x_dot);
-  motorControl(pid_torque);
+  motorControl(lqr_torque);
   /*
   else if(yax>yaxUpperThreshold)
   {
@@ -728,4 +748,34 @@ void loop()
   n++;
   
   
+}
+void accelGyro()
+{
+  Wire.beginTransmission(MPU);
+  Wire.write(0x3B); // Start with register 0x3B (ACCEL_XOUT_H)
+  Wire.endTransmission(false);
+  Wire.requestFrom(MPU, 6, true); // Read 6 registers total, each axis value is stored in 2 registers
+  //For a range of +-2g, we need to divide the raw values by 16384, according to the datasheet
+  ax = (Wire.read() << 8 | Wire.read())/ 16384.0; // X-axis value
+  ay = (Wire.read() << 8 | Wire.read())/ 16384.0; // Y-axis value
+  az = (Wire.read() << 8 | Wire.read())/ 16384.0; // Z-axis value
+
+  Wire.beginTransmission(MPU);
+  Wire.write(0x43); // Gyro data first register address 0x43
+  Wire.endTransmission(false);
+  Wire.requestFrom(MPU, 6, true); 
+
+  gx = (Wire.read() << 8 | Wire.read()) ; // For a 250deg/s range we have to divide first the raw value by 131.0, according to the datasheet
+  gy = (Wire.read() << 8 | Wire.read()) ;
+  gz = (Wire.read() << 8 | Wire.read()) ;
+  gy-=5.40*131*2.28;
+   /*
+  Serial.print("\tGyX: ");
+  Serial.print(gx);
+  Serial.print("\tGyY: ");
+  Serial.print(gy);
+  Serial.print("\tGyZ: ");
+  Serial.println(gz);
+  //Serial.println(gy);
+  */
 }
