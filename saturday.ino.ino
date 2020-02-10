@@ -769,13 +769,24 @@ void accelGyro()
   gy = (Wire.read() << 8 | Wire.read()) ;
   gz = (Wire.read() << 8 | Wire.read()) ;
   gy-=5.40*131*2.28;
-   /*
+
+  ax=ax-0.03;
+  ay=ay+0.005;
+  az=az-0.07;
+   
   Serial.print("\tGyX: ");
   Serial.print(gx);
   Serial.print("\tGyY: ");
   Serial.print(gy);
   Serial.print("\tGyZ: ");
-  Serial.println(gz);
+  Serial.print(gz);
+
+  Serial.print("\taX: ");
+  Serial.print(ax);
+  Serial.print("\taY: ");
+  Serial.print(ay);
+  Serial.print("\taZ: ");
+  Serial.println(az);
   //Serial.println(gy);
-  */
+  
 }
