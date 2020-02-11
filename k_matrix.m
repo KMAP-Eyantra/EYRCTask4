@@ -13,17 +13,17 @@
 
 pkg load control;
 pkg load signal
-mb = (1.0-0.310);               #Robot Mass Kg 
+mb = (1.0-0.310-0.050);               #Robot Mass Kg 
 mw = (91+310)/1000;         #Wheel Mass Kg
 h = 0.245       ;         #height m
 w = 0.07        ;        #width m #not distance between wheels
-jb = (mb*(h*h + w*w))/12 #Moment of Inertia about center Kgm^2
+jb = 7.53614*0.001 #Moment of Inertia about center Kgm^2
 r = 0.065/2              ; #Radius m
 jw = 0.5*(mw)*r*r     ;#Moment of Inertia of wheels Kgm^2
-l = (0.07)              ; ### Distance of wheel to center of mass
-ke = 0.3183             ;### EMF Constant Vs/rad
-km = 0.41675       ;## Torque Constant Nm/A
-R = 4               ;### Motor Resistance ohm
+l = (0.08)              ; ### Distance of wheel to center of mass
+ke = 0.4775;#0.3183             ;### EMF Constant Vs/rad #ke = kb
+km = 0.3472#0.41675       ;## Torque Constant Nm/A #km = kt
+R = 5               ;### Motor Resistance ohm
 g = 9.81               ; #m/s^2     
 b = 0.002               ;### Viscous Friction constant Nms/rad
 
@@ -51,18 +51,17 @@ C = [ 1 0 0 0;
 D = [0;0;0;0];
 
 Q=C'*C;
-T = 10;
-Q =   [10 0 0 0 ; 
-       0 5 0 0 ; 
-       0 0 100 0 ; 
-       0 0 0 5];
+Q =   [2 0 0 0 ; 
+       0 0 0 0 ; 
+       0 0 400 0 ; 
+       0 0 0 100];
 ##[n,d]=ss2tf(A,B,C,D);
 ##n  %num
 ##d  %den
 sys = ss(A,B,C,D);
-sys = c2d(sys,0.01)
-R = 100;
-#[K,S,e] = dlqr(sys.a,sys.b,Q,R);
-[K,S,e] = lqr(A,B,Q,R);
+sys = c2d(sys,0.004);
+R_l = 1;
+[K,S,e] = dlqr(sys.a,sys.b,Q,R_l);
+%[K,S,e] = dlqr(A,B,Q,R);
 e
 strcat("float k1 = ",num2str(K(1)),",k2 = ",num2str(K(2)),",k3 = ",num2str(K(3)),",k4 = ",num2str(K(4)),";")
