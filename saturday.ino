@@ -1,28 +1,32 @@
 //#include <Arduino.h>
 //#include <SoftwareSerial.h>
-#ifdef abs
-#undef abs
-#endif
-float init_time;
-float dt2=20;
-#define abs(x) ((x)>0?(x):-(x))
-//#define rxPin 0
-//#define txPin 1
 
-
+#include <avr/io.h>
+#include <avr/interrupt.h>
 #include "I2Cdev.h"
-#include "MPU6050.h"
-
-
+//#include "MPU6050.h"
 #if I2CDEV_IMPLEMENTATION == I2CDEV_ARDUINO_WIRE
     #include "Wire.h"
 #endif
+#ifdef abs
+#undef abs
+#endif
 
-MPU6050 accelgyro;
-
+#define abs(x) ((x)>0?(x):-(x))
 #define PI 3.1415926535897932384626433832795
-int ax, ay, az;
-int gx, gy, gz;
+const int MPU = 0x68; // MPU6050 I2C address
+//MPU6050 accelgyro;
+
+volatile int tot_overflow;
+volatile int timer1Flag = 0;
+//const int pinA =  3; 
+
+float init_time;
+float dt2=20;
+//#define rxPin 0
+//#define txPin 1
+float ax, ay, az;
+float gx, gy, gz;
 float yax, yay, yaz, ygx, ygy, ygz;
 int f_cut = 5;
 int n = 1;
@@ -52,9 +56,19 @@ float theta,theta_dot,prev_theta;
 //float k1 =0.27322,k2 =0.1746,k3 =-4.2593,k4 =-0.00151;
 //float k1 =0.27322,k2 =1.1746,k3 =-4.2593,k4 =-0.40151;
 //float k1 =0.26943,k2 =1.2607,k3 =-5.3147,k4 =-0.43766;
-float k1 =1,k2 =0.1129,k3 =-87,k4 =-1.5;
+//float k1 =1,k2 =0.1129,k3 =-65,k4 =-1.5;
+//float k1 =1.5478,k2 =5.5149,k3 =-50.4391,k4 =-1.628;
+//float k1 =1.9288,k2 =9.1311,k3 =-62.5589,k4 =-1.8164;
+//float k1 =2.1986,k2 =7.9812,k3 =-51.3101,k4 =-3.5164;
+//float k1 =2.4516,k2 =6.9707,k3 =-57.7848,k4 =-4.0715;
+//float k1 =1.1575,k2 =1.2863,k3 =-61.005,k4 =-3.3925;
+//float k1 =0.40436,k2 =-8.3847,k3 =-25.2536,k4 =-9.148;
+//float k1 =1.1414,k2 =2.3377,k3 =-83.6186,k4 =-3.6214;
+//float k1 =1.1881,k2 =-0.81173,k3 =-21.6576,k4 =-2.9583;
+//float k1 =0.86509,k2 =-4.1194,k3 =-19.6959,k4 =-6.2396;
 //float k1 =0.31623,k2 =0.079211,k3 =-5.8701,k4 =-0.48543;
 //float k1 =1,k2 =0.57943,k3 =-6.8103,k4 =-1.0958;
+float k1 =1.934,k2 =-2.6039,k3 =-20.4057,k4 =-6.2427;
 float prev_time; //= millis();
 float radius = 0.065/2.0, oneRevTicks = 270.0;
 #define OUTPUT_READABLE_ACCELGYRO
@@ -120,10 +134,27 @@ void setup() {
  LED_init();
  BUZZ_init();
  accel_init();
+ timer1_init();
+ 
  //pinMode(rxPin, INPUT);
  //pinMode(txPin, OUTPUT);
  //xbee.begin(19200);
- init_time = millis();
+ 
+}
+
+void timer1_init()
+{
+    // set up timer with prescaler = 8
+    TCCR1B |= (1 << CS11);
+    //TCNT1 = 45536; //10ms
+   // TCNT1 = 51536; //7ms
+     TCNT1 = 57536; //4ms
+    // TCNT1H = 0xC9;
+    // TCNT1L = 0x50;
+    // enable overflow interrupt
+    TIMSK1 |= (1 << TOIE1);
+    sei();
+    tot_overflow = 0;
 }
 
 /*
@@ -135,15 +166,33 @@ void setup() {
 void accel_init()
 {
     //#if I2CDEV_IMPLEMENTATION == I2CDEV_ARDUINO_WIRE
-    Wire.begin();
+    //Wire.begin();
     //#elif I2CDEV_IMPLEMENTATION == I2CDEV_BUILTIN_FASTWIRE
     //    Fastwire::setup(400, true);
     //#endif
-    Wire.setClock(400000UL); 
-    delay(100);
+   // Wire.beginTransmission(MPU);       // Start communication with MPU6050 // MPU=0x68
+  //  Wire.write(0x6B);                  // Talk to the register 6B
+   // Wire.write(0x00);                  // Make reset - place a 0 into the 6B register
+    //Wire.write(0x1F);                  //register for gy;
+    //Wire.write(0x05); 
+   // Wire.endTransmission(true);        //end the transmission
+
+   // Wire.setClock(400000UL); 
+   // delay(100);
+  
+    
     // initialize device
     //Serial.println("Initializing I2C devices...");
-    accelgyro.initialize();
+    //accelgyro.initialize();
+
+    Wire.begin();                      // Initialize comunication
+  Wire.beginTransmission(MPU);       // Start communication with MPU6050 // MPU=0x68
+  Wire.write(0x6B);                  // Talk to the register 6B
+  Wire.write(0x00);                  // Make reset - place a 0 into the 6B register
+  //Wire.write(0x1F);                  //register for gy;
+  //Wire.write(0x05); 
+  Wire.endTransmission(true);        //end the transmission
+    
 }
 
 void LED_init(){
@@ -189,13 +238,13 @@ void motor_init(void)
  pinMode(encodPinL1, INPUT);
  pinMode(encodPinL2, INPUT);
  
- digitalWrite(encodPinR1, HIGH);                      // turn on pullup resistor
- digitalWrite(encodPinR2, HIGH);
- digitalWrite(encodPinL1, HIGH);                      // turn on pullup resistor
- digitalWrite(encodPinL2, HIGH);
+ //digitalWrite(encodPinR1, HIGH);                      // turn on pullup resistor
+ //digitalWrite(encodPinR2, HIGH);
+ //digitalWrite(encodPinL1, HIGH);                      // turn on pullup resistor
+ //digitalWrite(encodPinL2, HIGH);
  
- attachInterrupt(1, rencoder, RISING);               // arduino pin 3
- attachInterrupt(4, lencoder, RISING);               // arduino pin 21
+ //attachInterrupt(1, rencoder, RISING);               // arduino pin 3
+ //attachInterrupt(4, lencoder, RISING);               // arduino pin 21
 }
 
 void moveMotor(int direction, int PWM_val, long tick)  
@@ -360,7 +409,7 @@ void MagDrop(void)
 
 void lowpassfilter(float ax,float ay,float az,int16_t n,int16_t f_cut)
 {
-  float dT = 0.01;  //time in seconds
+  float dT = 0.004;  //time in seconds
   float Tau= 1/(2*3.1457*f_cut);                   //f_cut = 5
   float alpha = Tau/(Tau+dT);                //do not change this line
 
@@ -385,7 +434,7 @@ void lowpassfilter(float ax,float ay,float az,int16_t n,int16_t f_cut)
 void highpassfilter(float gx,float gy,float gz,int16_t n,int16_t f_cut)
 {
   
-  float dT = 0.01;  //time in seconds
+  float dT = 0.004;  //time in seconds
   float Tau= 1/(2*3.1457*f_cut);                   //f_cut = 5
   float alpha = Tau/(Tau+dT);                //do not change this line
  
@@ -415,7 +464,7 @@ void highpassfilter(float gx,float gy,float gz,int16_t n,int16_t f_cut)
 void comp_filter_pitch(float ax,float ay,float az,float gx,float gy,float gz)
 {
   float alpha = 0.03;
-  float dt = 0.01;
+  float dt = 0.007;
 
   if (n==1)
   {
@@ -431,7 +480,7 @@ void comp_filter_pitch(float ax,float ay,float az,float gx,float gy,float gz)
 void comp_filter_roll(float ax,float ay,float az,float gx,float gy,float gz)
 {
   float alpha = 0.03;
-  float dt = 0.01;
+  float dt = 0.004;
 
   if (n==1)
   {
@@ -451,7 +500,7 @@ void motorControl(int torque)
 
  torque = abs(torque);
  if(torque<60)
-  torque = 0;
+  torque = 60;
  motorForward_R(torque); 
  motorForward_L(torque); 
 }
@@ -460,30 +509,51 @@ void motorControl(int torque)
 
  torque = abs(torque);
  if(torque<60)
-  torque = 0;
+  torque = 60;
  motorBackward_R(torque); 
  motorBackward_L(torque);
  }
 }
-void loop()
+
+ISR(TIMER1_OVF_vect)
 {
+ // TCNT1 = 45536;  //10ms
+ // TCNT1 = 51536; //7ms
+  TCNT1 = 57536; //4ms
+ // TCNT1H = 0xC9;
+ // TCNT1L = 0x50;
+  timer1Flag=1;
+   //tot_overflow++;
   
+
+    /*if (tot_overflow >= 1000 ) // NOTE: '>=' used instead of '=='
+    {
+        //flag=1;
+        digitalWrite(3,LOW);
+        //tot_overflow = 0;   // reset overflow counter
+    }*/
+}
+
+void  readTiltAngle()
+{
+    
   //MPU
-  accelgyro.getMotion6(&ax, &ay, &az, &gx, &gy, &gz);
+  //accelgyro.getMotion6(&ax, &ay, &az, &gx, &gy, &gz);
+  accelGyro();
   //Serial.println(accelgyro.getRate());
-  lowpassfilter(ax,ay,az,n,f_cut);
-  highpassfilter(gx/2.28,gy/2.28,gz/2.28,n,f_cut);
+  lowpassfilter(ax,ay,az,n,2);
+  highpassfilter(gx,gy,gz,n,2);
   comp_filter_pitch(yax,yay,yaz,ygx,ygy,ygz);
   comp_filter_roll(yax,yay,yaz,ygx,ygy,ygz);
   //MPU ENDS
-
   
+}
 
-
-  
+void lqrControl()
+{
   //STATE VARIABLES
   
-  theta = (roll-2);
+  theta = (roll-0.09);
   //theta_dot = (theta-prev_theta)/dt2;
   theta_dot = (theta-prev_theta);
   if(n%10 == 0)
@@ -496,16 +566,19 @@ void loop()
   
   
   //PID
-  int pid_torque = 50*theta
-  +0*(theta-prev_theta);//+ 20*x+0*(x-prev_x); //50 450 //20-20 good
-  //Serial.println(50*theta+10*(theta-prev_theta));
+  int pid_torque = 300*theta+900*(theta-prev_theta)- 0*x-0*(x-prev_x);
   pid_torque = constrain(pid_torque, -150, 150);
+  //if(pid_torque>=0)
+  //pid_torque = map(pid_torque, 0, 200, 60,200);
+  //else 
+  //pid_torque = map(pid_torque, -200, 0,-200,-60);
+  
   //PID ENDS
 
-  //Serial.print(30*theta);Serial.print("\t");Serial.println(10*theta-prev_theta);
-  lqr_torque =  ((x*k1)+(x_dot*k2)+(theta*k3/57.0)+(theta_dot*k4/57.0))*30*(200/7);
-
-  lqr_torque = constrain(lqr_torque, -125, 125); //
+  //Serial.print(300*theta);Serial.print("\t");Serial.println(250*(theta-prev_theta));
+  lqr_torque =  ((-x*k1)+(-x_dot*k2)+(theta*k3/57.0)+(theta_dot*k4/57.0))*(255.0/12.0);
+  lqr_torque = 14.400921*lqr_torque; 
+  lqr_torque = constrain(lqr_torque, -200, 200); //
   //Serial.print(x);Serial.print("\t");Serial.println(theta);
   
   //Serial.print(x*k1);Serial.print("\t");Serial.print(x_dot*k2);Serial.print("\t");Serial.print(theta*k3/57.0);Serial.print("\t");Serial.println(-theta_dot*k4/57.0);
@@ -522,7 +595,8 @@ void loop()
   
   //prev_lqr_torque = lqr_torque;
   //Serial.println(x_dot);
-  motorControl(pid_torque);
+  if(n%1 == 0)
+  motorControl(lqr_torque);
   /*
   else if(yax>yaxUpperThreshold)
   {
@@ -535,6 +609,11 @@ void loop()
     motorControl(abs(lqr_torque));
   }
   */
+}
+
+void zigbeeControl()
+{
+  
   //Serial.println();
   
   //Accept only if characters are 18 or more
@@ -659,20 +738,72 @@ void loop()
         moveMotor(LEFTWARD,  200, 3*2);
       }
 
-    else
-    {
-      motorBrake();
-    }
+      else
+      {
+        motorBrake();
+      }
     
-   } 
+    } 
   } 
-  if(n!=1)
+}
+
+void accelGyro()
+{
+  Wire.beginTransmission(MPU);
+  Wire.write(0x3B); // Start with register 0x3B (ACCEL_XOUT_H)
+  Wire.endTransmission(false);
+  Wire.requestFrom(MPU, 6, true); // Read 6 registers total, each axis value is stored in 2 registers
+  //For a range of +-2g, we need to divide the raw values by 16384, according to the datasheet
+  ax = (Wire.read() << 8 | Wire.read())/ 16384.0; // X-axis value
+  ay = (Wire.read() << 8 | Wire.read())/ 16384.0; // Y-axis value
+  az = (Wire.read() << 8 | Wire.read())/ 16384.0; // Z-axis value
+
+  Wire.beginTransmission(MPU);
+  Wire.write(0x43); // Gyro data first register address 0x43
+  Wire.endTransmission(false);
+  Wire.requestFrom(MPU, 6, true); 
+
+  gx = (Wire.read() << 8 | Wire.read()) ; // For a 250deg/s range we have to divide first the raw value by 131.0, according to the datasheet
+  gy = (Wire.read() << 8 | Wire.read()) ;
+  gz = (Wire.read() << 8 | Wire.read()) ;
+  gy-=5.40*131*2.28;
+
+  ax=ax-0.03;
+  ay=ay+0.005;
+  az=az-0.07;
+   
+//  Serial.print("\tGyX: ");
+//  Serial.print(gx);
+//  Serial.print("\tGyY: ");
+//  Serial.print(gy);
+//  Serial.print("\tGyZ: ");
+//  Serial.print(gz);
+//
+//  Serial.print("\taX: ");
+//  Serial.print(ax);
+//  Serial.print("\taY: ");
+//  Serial.print(ay);
+//  Serial.print("\taZ: ");
+//  Serial.println(az);
+  
+}
+
+
+void loop()
+{
+  if(timer1Flag==1)
   {
-  dt2 = (millis()-init_time) / 1000;
-  init_time = millis();
+    readTiltAngle();
+  
+    lqrControl();
+
+   // zigbeeControl();
+    timer1Flag=0;
   }
+  
+  
   //Serial.println(dt2*1000);
-  delay(7); 
+  //delay(7); 
   n++;
   
   
