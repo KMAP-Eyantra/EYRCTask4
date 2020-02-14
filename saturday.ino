@@ -479,7 +479,7 @@ void comp_filter_pitch(float ax,float ay,float az,float gx,float gy,float gz)
 
 void comp_filter_roll(float ax,float ay,float az,float gx,float gy,float gz)
 {
-  float alpha = 0.03;
+  float alpha = 0.01;
   float dt = 0.004;
 
   if (n==1)
@@ -535,16 +535,16 @@ ISR(TIMER1_OVF_vect)
 }
 
 void  readTiltAngle()
-{
-    
+{ 
   //MPU
   //accelgyro.getMotion6(&ax, &ay, &az, &gx, &gy, &gz);
   accelGyro();
   //Serial.println(accelgyro.getRate());
-  lowpassfilter(ax,ay,az,n,2);
-  highpassfilter(gx,gy,gz,n,2);
-  comp_filter_pitch(yax,yay,yaz,ygx,ygy,ygz);
-  comp_filter_roll(yax,yay,yaz,ygx,ygy,ygz);
+  //lowpassfilter(ax,ay,az,n,2);
+  //highpassfilter(gx,gy,gz,n,2);
+  //comp_filter_pitch(yax,yay,yaz,ygx,ygy,ygz);
+  //comp_filter_roll(yax,yay,yaz,ygx,ygy,ygz);
+  comp_filter_roll(ax,ay,az,gx,gy,gz);
   //MPU ENDS
   
 }
@@ -553,13 +553,14 @@ void lqrControl()
 {
   //STATE VARIABLES
   
-  theta = (roll-0.09);
+theta = (roll);//-0.09);
   //theta_dot = (theta-prev_theta)/dt2;
   theta_dot = (theta-prev_theta);
-  if(n%10 == 0)
-    {x = ((count_r)*2*PI*radius)/270.0; //displacement
-    x_dot = (x - prev_x);
-    countInit_r = count_r;
+  if(n%5 == 0)
+    {
+      x = ((count_r)*2*PI*radius)/270.0; //displacement
+      x_dot = (x - prev_x);
+      countInit_r = count_r;
     }
   //STATE VARIABLES ENDS
   //Serial.println(theta);
@@ -595,7 +596,7 @@ void lqrControl()
   
   //prev_lqr_torque = lqr_torque;
   //Serial.println(x_dot);
-  if(n%1 == 0)
+  //if(n%1 == 0)
   motorControl(lqr_torque);
   /*
   else if(yax>yaxUpperThreshold)
@@ -764,20 +765,20 @@ void accelGyro()
   Wire.requestFrom(MPU, 6, true); 
 
   gx = (Wire.read() << 8 | Wire.read()) ; // For a 250deg/s range we have to divide first the raw value by 131.0, according to the datasheet
-  gy = (Wire.read() << 8 | Wire.read()) ;
+  gy = (Wire.read() << 8 | Wire.read())/131.0 ;
   gz = (Wire.read() << 8 | Wire.read()) ;
-  gy-=5.40*131*2.28;
+gy-=5.35;//*131;//*2.28;
 
-  ax=ax-0.03;
-  ay=ay+0.005;
-  az=az-0.07;
-   
+ax=ax-0.03;
+ay=ay+0.005+0.02;
+az=az-0.08+0.02;
+//   
 //  Serial.print("\tGyX: ");
 //  Serial.print(gx);
 //  Serial.print("\tGyY: ");
 //  Serial.print(gy);
-//  Serial.print("\tGyZ: ");
-//  Serial.print(gz);
+////  Serial.print("\tGyZ: ");
+////  Serial.print(gz);
 //
 //  Serial.print("\taX: ");
 //  Serial.print(ax);
@@ -785,7 +786,8 @@ void accelGyro()
 //  Serial.print(ay);
 //  Serial.print("\taZ: ");
 //  Serial.println(az);
-  
+//  
+
 }
 
 
@@ -793,18 +795,14 @@ void loop()
 {
   if(timer1Flag==1)
   {
-    readTiltAngle();
-  
+    readTiltAngle(); 
     lqrControl();
-
    // zigbeeControl();
     timer1Flag=0;
   }
-  
-  
+  Serial.println(roll);
   //Serial.println(dt2*1000);
   //delay(7); 
   n++;
-  
   
 }
